@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>BJC SHIELD - Offline License Generator</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width:900px; margin:30px auto; }
+    label{display:block;margin-top:10px}
+    textarea{width:100%;height:120px}
+    input, select { padding:8px; width:100%; box-sizing:border-box }
+    button{margin-top:12px;padding:10px 16px}
+    pre{background:#f4f4f4;padding:10px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <h2>BJC_SHIELD License Generator (Offline Demo)</h2>
+
+  <label>Username
+    <input id="username" value="Juan dela Cruz"/>
+  </label>
+
+  <label>License Type
+    <select id="lictype">
+      <option value="trial">trial (7 days)</option>
+      <option value="monthly">monthly</option>
+      <option value="lifetime">lifetime</option>
+    </select>
+  </label>
+
+  <label>Days or months (for expiry) — trial: 7, monthly: 30
+    <input id="duration" value="30"/>
+  </label>
+
+  <label>Max Installations
+    <input id="maxinst" value="1"/>
+  </label>
+
+  <button id="gen">Generate License JSON</button>
+  <button id="copyBtn">Copy License JSON</button>
+
+  <h3>Generated License</h3>
+  <pre id="output">{}</pre>
+
+<script>
+/*
+ DEMO only: secret embedded in client-side JS. 
+ For production: SIGN on a secure server or use asymmetric keys.
+*/
+const SECRET = "DEMO_SECRET_KEY_CHANGE_ME";
+
+function utcNowISO(){ return new Date().toISOString(); }
+
+async function hmacSHA256(key, message){
+  // uses Web Crypto API
+  const enc = new TextEncoder();
+  const keyData = enc.encode(key);
+  const cryptoKey = await crypto.subtle.importKey("raw", keyData, {name:"HMAC", hash:"SHA-256"}, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(message));
+  // base64
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+
+function genRandomKey(){
+  // simple readable license key (not secure entropy)
+  const parts = [];
+  for(let i=0;i<4;i++){
+    parts.push(Math.random().toString(36).substr(2,6).toUpperCase());
+  }
+  return "BJCSHIELD-" + parts.join("-");
+}
+
+document.getElementById('gen').addEventListener('click', async ()=>{
+  const username = document.getElementById('username').value || "unknown";
+  const licType = document.getElementById('lictype').value;
+  const dur = parseInt(document.getElementById('duration').value) || 30;
+  const maxinst = parseInt(document.getElementById('maxinst').value) || 1;
+
+  const issued = new Date();
+  let expires = new Date(issued);
+  if(licType === "trial") expires.setDate(expires.getDate() + (dur || 7));
+  else if(licType === "monthly") expires.setDate(expires.getDate() + (dur || 30));
+  else if(licType === "lifetime") expires = new Date("9999-12-31T00:00:00Z");
+
+  const license = {
+    username: username,
+    license_type: licType,
+    issued_at: issued.toISOString(),
+    expires_at: expires.toISOString(),
+    max_installations: maxinst,
+    extra: { product: "BJC_SHIELD_PRO", ver: "1.1" },
+    license_key: genRandomKey()
+  };
+
+  // compute signature over canonical string
+  const payload = JSON.stringify(license);
+  const signature = await hmacSHA256(SECRET, payload);
+  license.signature = signature;
+
+  document.getElementById('output').textContent = JSON.stringify(license, null, 2);
+});
+
+document.getElementById('copyBtn').addEventListener('click', ()=>{
+  const txt = document.getElementById('output').textContent;
+  navigator.clipboard.writeText(txt).then(()=> alert('License JSON copied to clipboard'));
+});
+</script>
+</body>
+</html>
